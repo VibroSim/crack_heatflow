@@ -114,7 +114,9 @@ def scriptify(callable):
 
     # if CodeModule ends with return statement, replace with
     # assignment to _fas_returnval
-    if isinstance(CodeModule.body[-1],ast.Return):
+    has_return=False
+    if isinstance(CodeModule.body[-1],ast.Return) and CodeModule.body[-1].value is not None:
+        has_return=True
         new_assignment = ast.Assign(targets=[ast.Name(id="_fas_returnval",lineno=CodeModule.body[-1].lineno,col_offset=0,ctx=ast.Store())],value=CodeModule.body[-1].value,lineno=CodeModule.body[-1].lineno,col_offset=0)
         CodeModule.body.pop()
         CodeModule.body.append(new_assignment)
@@ -169,7 +171,12 @@ def scriptify(callable):
         
         # execute!
         exec(codeobj,context,context)
-        return context["_fas_returnval"]
+        if has_return:
+            retval=context["_fas_returnval"]
+            pass
+        else:
+            retval=None
+        return retval
     
 
     # Add globals from function module into __main__ namespace

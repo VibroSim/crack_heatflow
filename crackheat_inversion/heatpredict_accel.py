@@ -1,3 +1,6 @@
+import sys
+import os
+import os.path
 import numpy as np
 import scipy as sp
 import matplotlib
@@ -6,8 +9,14 @@ import scipy.integrate
 from scipy.integrate import quad
 import time
 
-import pyopencl as cl
+try:
+    import pyopencl as cl
+    pass
+except ImportError:
+    cl=None
+    pass
 
+    
 # regenerate qagse_fparams.c with:
 # f2c -a qagse_fparams.f
 # patch -p0 <qagse_fparams.patch
@@ -431,13 +440,23 @@ __kernel void integrate_r_theta_y(__global const float *position_x,
 
 """
 
+# find current module so we can use path to load "qagse_fparams.c"
+class dummy(object):
+    pass
+modpath = sys.modules[dummy.__module__].__file__
+moddir = os.path.split(modpath)[0]
 
-qagse_fparams=open("qagse_fparams.c","r").read()
+
+
+qagse_fparams=open(os.path.join(moddir,"qagse_fparams.c"),"r").read()
 
 kernelcode=kernelpattern % (qagse_fparams,qagse_fparams,qagse_fparams)
 
-def surface_heating(x_nd,y_nd,t_nd,stripradius1,stripradius2,t1,t2,alpha,k,posside):
-    ctx = cl.create_some_context()
+def surface_heating(x_nd,y_nd,t_nd,stripradius1,stripradius2,t1,t2,alpha,k,posside,ctx=None):
+
+    if ctx is None:
+        ctx = cl.create_some_context()
+        pass
     queue = cl.CommandQueue(ctx)
 
     (x_bc,y_bc,t_bc,R1_bc,R2_bc)=np.broadcast_arrays(x_nd,y_nd,t_nd,stripradius1,stripradius2)
@@ -484,7 +503,7 @@ def surface_heating(x_nd,y_nd,t_nd,stripradius1,stripradius2,t1,t2,alpha,k,possi
 
 
 
-def surface_heating_y_integral(refpos_y,infpos_y,x_nd,t_nd,stripradius1,stripradius2,t1,t2,alpha,k,posside,ctx=None,maxiter=4000):
+def surface_heating_y_integral(refpos_y,infpos_y,x_nd,t_nd,stripradius1,stripradius2,t1,t2,alpha,k,posside,ctx=None,maxiter=2000):
 
     if ctx is None:
         ctx = cl.create_some_context()
