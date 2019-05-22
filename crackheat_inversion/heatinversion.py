@@ -142,7 +142,7 @@ invariant under spatial changes.
     return (bestfit,recon,s)  # always returns singular values from regular least squares
     
 
-def heatinvert_wfm(wfmdict,HeatingChannel,Arb,matl_k,matl_rho,matl_c,cracktip1x,cracktip1y,cracktip2x,cracktip2y,tikparam,rstep,ctx=None):
+def heatinvert_wfm(wfmdict,HeatingChannel,Arb,matl_k,matl_rho,matl_c,crackcenterx,crackcentery,cracktip1x,cracktip1y,tikparam,rstep,ctx=None):
 
     integration_width=1e-2 # 1 cm
     extra_length=1e-3 # 1cm
@@ -170,32 +170,37 @@ def heatinvert_wfm(wfmdict,HeatingChannel,Arb,matl_k,matl_rho,matl_c,cracktip1x,
     # or near vertical
 
 
-    crackangle = np.arctan2(cracktip2y-cracktip1y,cracktip2x-cracktip1x)
+    crackangle = np.arctan2(cracktip1y-crackcentery,cracktip1x-crackcenterx)
     if np.abs(crackangle) < np.pi/10 or np.abs(crackangle-np.pi) < np.pi/10 or np.abs(crackangle+np.pi) < np.pi/10:
         # approximately horizontal
         # ... do vertical integration
 
-        int_centerpos = (cracktip1y+cracktip2y)/2.0
+        int_centerpos = crackcentery
         int_bottom=int_centerpos-integration_width/2.0
         int_top=int_centerpos+integration_width/2.0
         int_bottom_idx = (int_bottom-IniVal[1])/Step[1]
         int_top_idx = (int_top-IniVal[1])/Step[1]
 
         int_start_idx=min(int(round(int_bottom_idx)),int(round(int_top_idx)))
+        int_start_idx=max(0,int_start_idx)
         int_end_idx=max(int(round(int_bottom_idx)),int(round(int_top_idx)))
+        int_end_idx=min(int(DimLen[1])-1,int_end_idx)
         
 
         
-        if cracktip1x < cracktip2x:
-            crack_region = (cracktip1x-extra_length/2.0,cracktip2x+extra_length/2.0)
+        if cracktip1x < crackcenterx:
+            crack_region = (cracktip1x-extra_length/2.0,crackcenterx + half_length +extra_length/2.0)
             pass
         else:
-            crack_region = (cracktip2x-extra_length/2.0,cracktip1x+extra_length/2.0)
+            half_length = cracktip1x-crackcenterx
+            crack_region = (crackcenterx-half_length-extra_length/2.0,cracktip1x+extra_length/2.0)
             pass
         
         crack_region_idxs=np.array(((crack_region[0]-IniVal[0])/Step[0],(crack_region[1]-IniVal[0])/Step[0]),dtype='d')
-        crack_region_start=min(int(round(crack_region_idxs[0])),int(round(crack_region_idxs[1])))  
+        crack_region_start=min(int(round(crack_region_idxs[0])),int(round(crack_region_idxs[1])))
+        crack_region_start=max(0,crack_region_start)
         crack_region_end=max(int(round(crack_region_idxs[0])),int(round(crack_region_idxs[1])))
+        crack_region_end=min(int(DimLen[0])-1,crack_region_end)
 
         use_data = evaluated.data[crack_region_start:(crack_region_end+1),int_start_idx:(int_end_idx+1),:]
         
@@ -204,36 +209,42 @@ def heatinvert_wfm(wfmdict,HeatingChannel,Arb,matl_k,matl_rho,matl_c,cracktip1x,
         use_data_integrated = np.sum(use_data,axis=int_axis)*Step[1] # integral over dy
 
         crack_pos = bases[0][crack_region_start:(crack_region_end+1)]
-        crack_length=abs(cracktip2x-cracktip1x)
+        crack_length=abs(cracktip1x-crackcenterx)*2.0
         int_pos=bases[1][int_start_idx:(int_end_idx+1)]
 
-        crack_centerpos = (cracktip1x+cracktip2x)/2.0
+        crack_centerpos = crackcenterx
         
         pass
     elif np.abs(crackangle - np.pi/2.0) < np.pi/10 or np.abs(crackangle + np.pi/2.0) < np.pi/10:
         # approximately vertical
 
-        int_centerpos = (cracktip1x+cracktip2x)/2.0
+        int_centerpos = crackcenterx
         int_left=int_centerpos-integration_width/2.0
         int_right=int_centerpos+integration_width/2.0
         int_left_idx = (int_left-IniVal[0])/Step[0]
         int_right_idx = (int_right-IniVal[0])/Step[0]
 
         int_start_idx=min(int(round(int_left_idx)),int(round(int_right_idx)))
+        int_start_idx=max(0,int_start_idx)
         int_end_idx=max(int(round(int_right_idx)),int(round(int_right_idx)))
-        
+        int_end_idx=min(int(DimLen[0])-1,int_end_idx)
+
 
         
-        if cracktip1y < cracktip2y:
-            crack_region = (cracktip1y-extra_length/2.0,cracktip2y+extra_length/2.0)
+        if cracktip1y < crackcentery:
+            half_length = crackcentery-cracktip1y
+            crack_region = (cracktip1y-extra_length/2.0,crackcentery+half_length+extra_length/2.0)
             pass
         else:
-            crack_region = (cracktip2y-extra_length/2.0,cracktip1y+extra_length/2.0)
+            half_length = cracktip1y-crackcentery
+            crack_region = (crackcentery-half_length-extra_length/2.0,cracktip1y+extra_length/2.0)
             pass
         
         crack_region_idxs=np.array(((crack_region[0]-IniVal[1])/Step[1],(crack_region[1]-IniVal[1])/Step[1]),dtype='d')
         crack_region_start=min(int(round(crack_region_idxs[0])),int(round(crack_region_idxs[1])))  
+        crack_region_start=max(0,crack_region_start)
         crack_region_end=max(int(round(crack_region_idxs[0])),int(round(crack_region_idxs[1])))
+        crack_region_end=min(int(DimLen[1])-1,crack_region_end)
 
         use_data = evaluated.data[int_start_idx:(int_end_idx+1),crack_region_start:(crack_region_end+1),:]
 
@@ -242,10 +253,10 @@ def heatinvert_wfm(wfmdict,HeatingChannel,Arb,matl_k,matl_rho,matl_c,cracktip1x,
         use_data_integrated = np.sum(use_data,axis=int_axis)*Step[0] # integral over dy
 
         crack_pos = bases[1][crack_region_start:(crack_region_end+1)]
-        crack_length=abs(cracktip2y-cracktip1y)
+        crack_length=abs(crackcentery-cracktip1y)*2.0
         int_pos=bases[0][int_start_idx:(int_end_idx+1)]
 
-        crack_centerpos = (cracktip1y+cracktip2y)/2.0
+        crack_centerpos = crackcentery
         
         
         pass

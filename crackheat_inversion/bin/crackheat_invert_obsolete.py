@@ -17,10 +17,10 @@ def main(args=None):
         pass
 
     if len(args) < 3:
-        print("Usage: crackheat_invert <dgs_file> <material> \"<cracktipcoords1>\" \"<cracktipcoords2>\" <tikparam> <rstep>")
+        print("Usage: crackheat_invert <dgs_file> <material> \"<crackcentercoords>\" \"<cracktipcoords>\" <tikparam> <rstep>")
         print(" ")
-        print("The crack tip coordinates can be pasted from the oscilloscope display;")
-        print("They should be symmetric about the crack center, and along the length of the crack. If they are beyond the crack tips that is OK so long as they are symmetric and aligned reasonably closely to the tips. They should be no more than a mm or two offset laterally from the crack.")
+        print("The crack center / crack tip coordinates can be pasted from the oscilloscope display;")
+        print("If the tip is beyond the crack tip that is OK. They should be no more than a mm or two offset laterally from the crack.")
         print(" ")
         print(" material can be a tuple (k,rho,c) in MKS units ")
         print(" or Ti64 or In718 to use book value for those materials ")
@@ -33,8 +33,8 @@ def main(args=None):
     
     dgs_file = args[1]
     material = args[2]
-    cracktip1 = args[3]
-    cracktip2 = args[4]
+    crackcenter = args[3]
+    cracktip = args[4]
     if len(args) >= 6:
         tikparam = float(args[5])
         pass
@@ -50,14 +50,14 @@ def main(args=None):
         pass
 
 
-    (metadata,wfmdict)=dgf.loadsnapshot(dgs_file)
-
-    if "VibroFit" in wfmdict:
-        HeatingChannel=wfmdict["VibroFit"]
-        pass
-    else:
-        HeatingChannel=wfmdict["DiffStack"]
-        pass
+    #(metadata,wfmdict)=dgf.loadsnapshot(dgs_file)
+    #
+    #if "VibroFit" in wfmdict:
+    #    HeatingChannel=wfmdict["VibroFit"]
+    #    pass
+    #else:
+    HeatingChannel=wfmdict["DiffStack"]
+    #    pass
          
     if "Arb" in wfmdict:
         Arb=wfmdict["Arb"]
@@ -82,13 +82,15 @@ def main(args=None):
         matl_c=float(matl_c)        
         pass
 
-    (cracktip1x,cracktip1y) = ast.literal_eval(cracktip1)
-    cracktip1x=float(cracktip1x)
-    cracktip1y=float(cracktip1y)
+    (cracktipx,cracktipy) = ast.literal_eval(cracktip)
+    cracktipx=float(cracktipx)
+    cracktipy=float(cracktipy)
     
-    (cracktip2x,cracktip2y) = ast.literal_eval(cracktip2)
-    cracktip2x=float(cracktip2x)
-    cracktip2y=float(cracktip2y)
+    (crackcenterx,crackcentery) = ast.literal_eval(crackcenter)
+    crackcenterx=float(crackcenterx)
+    crackcentery=float(crackcentery)
+
+    #ctx=cl.create_some_context()
 
     ctx=cl.create_some_context()
     
@@ -103,7 +105,7 @@ def main(args=None):
      excend_idx,
      r_bnds,
      bestfit,recon,s,
-     bestfit_highres,recon_highres,s_highres) = heatinvert_wfm(wfmdict,HeatingChannel,Arb,matl_k,matl_rho,matl_c,cracktip1x,cracktip1y,cracktip2x,cracktip2y,tikparam,rstep,ctx=ctx)
+     bestfit_highres,recon_highres,s_highres) = heatinvert_wfm(wfmdict,HeatingChannel,Arb,matl_k,matl_rho,matl_c,crackcenterx,crackcentery,cracktipx,cracktipy,tikparam,rstep,ctx=ctx)
 
     r_centers=(r_bnds[:-1]+r_bnds[1:])/2.0
 

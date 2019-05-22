@@ -10,7 +10,7 @@ import sys
 crackheat_inversion_package_files=[ "pt_steps/*", "qagse_fparams.c" ]
 
 
-console_scripts=["crackheat_invert"]
+console_scripts=["crackheat_invert_obsolete"]
 #gui_scripts = []  # Could move graphical scripts into here to eliminate stdio window on Windows (where would error messages go?)
 
 console_scripts_entrypoints = [ "%s = crackheat_inversion.bin.%s:main" % (script,script.replace("-","_")) for script in console_scripts ]
