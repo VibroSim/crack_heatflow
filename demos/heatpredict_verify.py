@@ -5,8 +5,7 @@ import heatsim2
 
 import pyopencl as cl
 
-from crackheat_inversion.heatinversion import heatinvert
-from crackheat_inversion import surface_heating_y_integral
+from crack_heatflow import surface_heating_y_integral
 
 #from function_as_script import scriptify
 #from crackheat_inversion.heatinvert import heatinvert as heatinvert_function
@@ -51,11 +50,13 @@ boundaries=(
     (heatsim2.boundary_insulating,),
 )
 
+Power_watts_per_m2 = 1000.0
+
 volumetric=(  # on material grid
     # 0: nothing
     (heatsim2.NO_SOURCE,),
     #1: stepped source 
-    (heatsim2.STEPPED_SOURCE,t1,t2,1000.0/dy), # t0 (sec), t1 (sec), Power W/m^2/dy 
+    (heatsim2.STEPPED_SOURCE,t1,t2,Power_watts_per_m2/dy), # t0 (sec), t1 (sec), Power W/m^2/dy 
 )
 
 # initialize all elements to zero
@@ -113,7 +114,7 @@ last_temp=np.zeros((nz,ny,nx),dtype='d') # initial condition
 for tcnt in range(nt_centers):
     tval_center=t_centers[tcnt]
     tval_bnd=t_bnd[tcnt]
-    print "tval_center=%f" % (tval_center)
+    print("tval_center=%f" % (tval_center))
     T[tcnt,...]=heatsim2.run_adi_steps(ADI_params,ADI_steps,tval_bnd,dt,last_temp,volumetric_elements,volumetric)
     last_temp=T[tcnt,...]
     pass
@@ -125,98 +126,37 @@ integrated = T[:,0,:,:].sum(1).transpose()*dy
 r_bnds = np.arange(0,6e-3,1e-3)
 r_centers=(r_bnds[:-1]+r_bnds[1:])/2.0
 
-# Low resolution, using all frames
-tikparam=2e-7
-(bestfit,recon,s) = heatinvert(x,xcenter,t_centers,t1,t2,k,rho*c,r_bnds,1e-3,1.0,integrated,tikparam)
+# Forward prediction
+predict=np.zeros((x.shape[0],t_centers.shape[0]),dtype='d')
 
-# high resolution, using only one frame
+# Integrate over heating semicircles from 1mm to 3mm
+halfsemi_neg_heating = surface_heating_y_integral(1e-3,1.0,x[:,np.newaxis]-xcenter,t_centers[np.newaxis,:],1e-3,3e-3,t1,t2,k/(rho*c),k,False,ctx=ctx)
+halfsemi_pos_heating = surface_heating_y_integral(1e-3,1.0,x[:,np.newaxis]-xcenter,t_centers[np.newaxis,:],1e-3,3e-3,t1,t2,k/(rho*c),k,True,ctx=ctx)
+
+predict += halfsemi_neg_heating * (Power_watts_per_m2)
+predict += halfsemi_pos_heating * (Power_watts_per_m2)
+
+
 frameno = t1idx+10*grid_refinement
-tikparam_highres= 0.0
-(bestfit_highres,recon_highres,s_highres) = heatinvert(x,xcenter,t_centers[frameno:(frameno+1)],t1,t2,k,rho*c,r_bnds,1e-3,1.0,integrated[:,frameno:(frameno+1)],tikparam_highres,ctx=ctx)
-
-
-# Forward prediction from lowres/highres:
-predict_lowres=np.zeros((x.shape[0],t_centers.shape[0]),dtype='d')
-predict_highres=np.zeros((x.shape[0],t_centers.shape[0]),dtype='d')
-for r_idx in range(r_bnds.shape[0]-1):
-    halfsemi_neg_heating = surface_heating_y_integral(1e-3,1.0,x[:,np.newaxis]-xcenter,t_centers[np.newaxis,:],r_bnds[r_idx],r_bnds[r_idx+1],t1,t2,k/(rho*c),k,False,ctx=ctx)
-    halfsemi_pos_heating = surface_heating_y_integral(1e-3,1.0,x[:,np.newaxis]-xcenter,t_centers[np.newaxis,:],r_bnds[r_idx],r_bnds[r_idx+1],t1,t2,k/(rho*c),k,True,ctx=ctx)
-
-    predict_lowres += halfsemi_neg_heating*bestfit[r_idx*2]
-    predict_lowres += halfsemi_pos_heating*bestfit[r_idx*2+1]
-
-    predict_highres += halfsemi_neg_heating*bestfit_highres[r_idx*2]
-    predict_highres += halfsemi_pos_heating*bestfit_highres[r_idx*2+1]
-
-    pass
-
 
 pl.figure()
-pl.subplot(2,1,1)
 pl.imshow(integrated,vmin=0,vmax=np.max(integrated)*1.1)
 pl.colorbar()
 pl.title('Forward finite difference sim (lowres)')
 
-pl.subplot(2,1,2)
-pl.imshow(recon,vmin=0,vmax=np.max(integrated)*1.1)
-pl.colorbar()
-pl.title('Inversion reconstruction (lowres)')
 
 pl.figure()
-pl.plot(r_centers,bestfit[::2],'-',
-        r_centers,bestfit[1::2],'-')
-pl.title('recovered source intensity as function of r (lowres)')
-pl.ylabel('Source intensity, W/m^2')
-pl.legend(('x < 0','x > 0'))
-
-pl.figure()
-pl.plot(s)
-pl.plot((0,s.shape[0]-1),(tikparam,tikparam))
-pl.title('Tikhonov parameter diagnostic (lowres)')
-pl.legend(('Singular values','Tikhonov parameter'))
-
-
-
-
-pl.figure()
-pl.plot(integrated[:,frameno:(frameno+1)])
-pl.plot(recon_highres[:,0])
-pl.title('Forward finite difference sim and reconstruction (highres)')
-pl.legend(('Finite difference','Reconstruction'))
-
-pl.figure()
-pl.plot(r_centers,bestfit_highres[::2],'-',
-        r_centers,bestfit_highres[1::2],'-')
-pl.title('recovered source intensity as function of r (highres)')
-pl.ylabel('Source intensity, W/m^2')
-pl.legend(('x < 0','x > 0'))
-
-pl.figure()
-pl.plot(s_highres)
-pl.plot((0,s_highres.shape[0]-1),(tikparam_highres,tikparam_highres))
-pl.title('Tikhonov parameter diagnostic (highres)')
-pl.legend(('Singular values','Tikhonov parameter'))
-
-pl.figure()
-pl.imshow(predict_lowres)
-pl.colorbar()
-
-pl.figure()
-pl.imshow(predict_highres)
+pl.imshow(predict)
 pl.colorbar()
 
 pl.figure()
 pl.plot(integrated[:,frameno:(frameno+1)])
-pl.plot(predict_lowres[:,frameno:(frameno+1)])
-pl.plot(predict_highres[:,frameno:(frameno+1)])
-pl.plot(recon_highres[:,0])
-pl.legend(('original sim','predict_lowres','predict_highres','recon_highres'))
+pl.plot(predict[:,frameno:(frameno+1)])
+pl.legend(('original sim','predict'))
 
 pl.figure()
 pl.plot(integrated[:,t2idx:(t2idx+1)])
-pl.plot(predict_lowres[:,t2idx:(t2idx+1)])
-pl.plot(predict_highres[:,t2idx:(t2idx+1)])
-#pl.plot(recon_highres[:,0])
-pl.legend(('original sim','predict_lowres','predict_highres'))
+pl.plot(predict[:,t2idx:(t2idx+1)])
+pl.legend(('original sim','predict'))
 
 pl.show()
