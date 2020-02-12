@@ -12,6 +12,10 @@
 #    from globals of different names. The assignments
 #    occur with each script call in the __main__
 #    namespace
+#  * NOTE: If used within LIMATIX ProcessTrak  instead 
+#    of assigning into the __main__ namespace it will 
+#    instead assign into the globals of the current
+#    processtrak step.  
 #  * Default arguments work, but relying on them is
 #    dangerous if you have calls with/without the
 #    default arguments in the script, because
@@ -61,7 +65,13 @@ def add_to_lineos(astobj,lineno_increment):
         pass
     pass
 
-    
+def py275_exec_bug_workaround(codeobj,globs,locs):
+    """Workaround for bug in Python 2.7.5 where if we exec
+directly inside a nested function we get an error"""
+
+    exec(codeobj,globs,locs)
+    pass
+
 
 def scriptify(callable):
 
@@ -77,20 +87,57 @@ def scriptify(callable):
     syntree = ast.parse(sourcecode)
     assert(syntree.__class__ is ast.Module)
 
-    # Find the correct function definition
+    # Find the function/method definition
     synsubtree=None
-    for BodyEl in syntree.body:
-        if isinstance(BodyEl,ast.FunctionDef):
-            # Found a function definition
-            if BodyEl.name==callable.__name__:
-                # Found our function
-                synsubtree = BodyEl
-                break
+    if callable.__class__.__name__=="method":
+        # Got a method not a class
+        if callable.__self__.__class__ is type:
+            # This is a classmethod we got
+            classname=callable.__self__.__name__
+            pass
+        else:
+            # This is a regular (object) method
+            classname = callable.__self__.__class__.__name__
+            pass
+        
+        # Find the correct method definition
+        for BodyEl in syntree.body:
+            if isinstance(BodyEl,ast.ClassDef):
+                # Found a function definition
+                if BodyEl.name==classname:
+                    # Found our class
+                    # seek out the method
+
+                    for SubBodyEl in BodyEl.body:
+                        if isinstance(SubBodyEl,ast.FunctionDef):
+                            # Found a function definition
+                            if SubBodyEl.name==callable.__name__:
+                                # Found our function
+                                
+                                synsubtree = SubBodyEl
+                                break
+                            pass
+                        pass
+                    
+                    break
+                pass
             pass
         pass
-
+    else:
+        # Find the correct function definition
+        
+        for BodyEl in syntree.body:
+            if isinstance(BodyEl,ast.FunctionDef):
+                # Found a function definition
+                if BodyEl.name==callable.__name__:
+                    # Found our function
+                    synsubtree = BodyEl
+                    break
+                pass
+            pass
+        pass
     if synsubtree is None:
-        raise ValueError("Definition of function %s not found in %s" % (callable.__name__,sourcefile))
+        raise ValueError("Definition of function/method %s not found in %s" % (callable.__name__,sourcefile))
     
     
     ## Iterate over syntree, correcting line numbers
@@ -99,7 +146,7 @@ def scriptify(callable):
     #assert(syntree.body[0].__class__ is ast.FunctionDef)
 
     args = synsubtree.args.args
-    argnames = [ arg.id for arg in args ]
+    argnames = [ arg.id if hasattr(arg,"id") else arg.arg for arg in args ]
     
     # Extract default arguments
     assert((len(synsubtree.args.defaults) == 0 and callable.__defaults__ is None) or len(synsubtree.args.defaults) == len(callable.__defaults__))
@@ -108,7 +155,37 @@ def scriptify(callable):
     mandatoryargnames = argnames[:(len(argnames)-len(synsubtree.args.defaults))]
     defaultargnames = argnames[(len(argnames)-len(synsubtree.args.defaults)):]
 
-    context = sys.modules["__main__"].__dict__
+
+    # Search for a context to write to. Normally this would be
+    # the __main__ globals. But we check first whether there is 
+    # a processtrak step. Do this by inspecting the stack:
+    context = None
+    try: 
+        stackframe=None
+        stacktrace = inspect.stack()
+        for stackcnt in range(1,len(stacktrace)):
+            stackframe=stacktrace[stackcnt][0]
+            stack_global_dict = dict(inspect.getmembers(stackframe))["f_globals"]
+            if "__processtrak_stepname" in stack_global_dict:
+                # This is a global dictionary created by processtrak 
+                # for a processtrak step. 
+                # ... use this context!
+                context = stack_global_dict
+                break
+            pass
+        pass
+    finally:
+        # Avoid keeping references around
+        del stackframe
+        del stacktrace
+        pass
+        
+    if context is None:
+        # Did not find a processtrak context
+        # Use __main__ global dictionary
+        context = sys.modules["__main__"].__dict__
+        pass
+        
 
     CodeModule=ast.Module(body=synsubtree.body,lineno=0)
 
@@ -128,10 +205,20 @@ def scriptify(callable):
     
     def scriptified(*args,**kwargs):
         # Pass arguments
+        if callable.__class__.__name__=="method":
+            argshift=1
+            pass
+        else:
+            argshift=0
+            pass
+        
         for argcnt in range(len(mandatoryargnames)):
             argname=mandatoryargnames[argcnt]
-            if argcnt < len(args):
-                argvalue = args[argcnt]
+            if argcnt==0 and callable.__class__.__name__=="method": # ("self" parameter)
+                argvalue=callable.__self__
+                pass
+            elif argcnt-argshift < len(args):
+                argvalue = args[argcnt-argshift]
                 pass
             elif argname in kwargs:
                 argvalue=kwargs[argname]
@@ -145,8 +232,8 @@ def scriptify(callable):
         # Optional arguments
         for argcnt in range(len(defaultargnames)):
             argname=defaultargnames[argcnt]
-            if argcnt+len(mandatoryargnames) < len(args):
-                argvalue = args[argcnt+len(mandatoryargnames)]
+            if argcnt+len(mandatoryargnames)-argshift < len(args):
+                argvalue = args[argcnt+len(mandatoryargnames)-argshift]
                 pass
             elif argname in kwargs:
                 argvalue=kwargs[argname]
@@ -169,8 +256,10 @@ def scriptify(callable):
         #        pass
         #    pass
         
-        # execute!
-        exec(codeobj,context,context)
+        # execute!        
+        #exec(codeobj,context,context)
+
+        py275_exec_bug_workaround(codeobj,context,context)
         if has_return:
             retval=context["_fas_returnval"]
             pass
@@ -192,7 +281,7 @@ def scriptify(callable):
             # do not transfer any variables starting with "__"
             pass
         elif varname in context:
-            if context[varname].__name__=="scriptified":
+            if hasattr(context[varname],"__name__") and context[varname].__name__=="scriptified":
                 # Do not object to (but do not overwrite)
                 # a scriptified function
                 pass
