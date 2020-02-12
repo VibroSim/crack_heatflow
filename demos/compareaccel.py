@@ -3,8 +3,8 @@ import os
 import numpy as np
 from matplotlib import pyplot as pl
 
-from crackheat_inversion.heatpredict import surface_heating
-from crackheat_inversion.heatpredict_accel import surface_heating as surface_heating_accel
+from crack_heatflow.heatpredict import surface_heating
+from crack_heatflow.heatpredict_accel import surface_heating as surface_heating_accel
 
 
 if __name__=="__main__":
