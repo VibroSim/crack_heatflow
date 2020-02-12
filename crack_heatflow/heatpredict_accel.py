@@ -9,13 +9,6 @@ import scipy.integrate
 from scipy.integrate import quad
 import time
 
-try:
-    import pyopencl as cl
-    pass
-except ImportError:
-    cl=None
-    pass
-
     
 # regenerate qagse_fparams.c with:
 # f2c -a qagse_fparams.f
@@ -454,6 +447,8 @@ kernelcode=kernelpattern % (qagse_fparams,qagse_fparams,qagse_fparams)
 
 def surface_heating(x_nd,y_nd,t_nd,stripradius1,stripradius2,t1,t2,alpha,k,posside,ctx=None):
 
+
+    import pyopencl as cl
     if ctx is None:
         ctx = cl.create_some_context()
         pass
@@ -505,6 +500,8 @@ def surface_heating(x_nd,y_nd,t_nd,stripradius1,stripradius2,t1,t2,alpha,k,possi
 
 def surface_heating_y_integral(refpos_y,infpos_y,x_nd,t_nd,stripradius1,stripradius2,t1,t2,alpha,k,posside,ctx=None,maxiter=2000):
 
+    import pyopencl as cl
+    
     if ctx is None:
         ctx = cl.create_some_context()
         pass
