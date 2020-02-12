@@ -16,7 +16,8 @@ def calc_heating_frame(along,across,unique_time,unique_r,r_inner,r_outer,timeseg
     recongrid = np.zeros((along.shape[0],across.shape[0]),dtype='d')
 
     if ctx is None:
-        from crack_heatflow.heatpredict import surface_heating
+        from crack_heatflow.heatpredict import surface_heating as surface_heating_unaccel
+        surface_heating = lambda position_x,position_y,t,stripradius1,stripradius2,t1,t2,alpha,k,pos_side,ctx: surface_heating_unaccel(position_x,position_y,t,stripradius1,stripradius2,t1,t2,alpha,k,pos_side)
         pass
     else:
         from crack_heatflow.heatpredict_accel import surface_heating
@@ -24,10 +25,10 @@ def calc_heating_frame(along,across,unique_time,unique_r,r_inner,r_outer,timeseg
     
     
     for timeidx in range(unique_time.shape[0]):
-        recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],k/(rho*c),False,ctx=ctx)*side1_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
+        recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],alpha,k,False,ctx=ctx)*side1_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
             
             
-        recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],k/(rho*c),True,ctx=ctx)*side2_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
+        recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],alpha,k,True,ctx=ctx)*side2_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
             
         pass
     
@@ -42,7 +43,7 @@ def run(dc_dest_href,
         dc_recon_size_along_numericunits,
         dc_recon_stepsize_across_numericunits,
         dc_recon_stepsize_along_numericunits,
-        dc_simulationcamera_netd_numericunits,
+        dc_simulationcameranetd_numericunits,
         dc_spcThermalConductivity_numericunits,
         dc_spcSpecificHeatCapacity_numericunits,
         dc_Density_numericunits):
@@ -89,14 +90,14 @@ def run(dc_dest_href,
     assert(np.all(time_reshape==unique_time[:,np.newaxis]))
     
     dr = unique_r[1:]-unique_r[:-1]
-    dr_full = np.concatenate((dr,np.array(dr[-1])))
+    dr_full = np.concatenate((dr,np.array((dr[-1],))))
 
     r_inner = unique_r-dr_full/2.0
     r_outer = unique_r+dr_full/2.0
     r_inner[r_inner < 0.0]=0.0
 
     dt = unique_time[1:]-unique_time[:-1]
-    dt_full = np.concatenate((dt,np.array(dt[-1])))
+    dt_full = np.concatenate((dt,np.array((dt[-1],))))
     
     timeseg_start = unique_time-dt_full
     timeseg_end = unique_time+dt_full
@@ -108,12 +109,12 @@ def run(dc_dest_href,
                                             unique_time,unique_r,
                                             r_inner,r_outer,
                                             timeseg_start,timeseg_end,
-                                            alpha,k,
+                                            k/(rho*c),k,
                                             side1_heating_reshape,side2_heating_reshape,
                                             dc_exc_t3_numericunits.value("s"),ctx)
 
 
-    camera_netd = dc_simulationcamera_netd_numericunits.value("K")
+    camera_netd = dc_simulationcameranetd_numericunits.value("K")
     
     surface_heating_t3_noisy = surface_heating_t3 + np.random.randn(surface_heating_t3.shape)*camera_netd
     
