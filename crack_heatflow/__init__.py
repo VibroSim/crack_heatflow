@@ -3,7 +3,6 @@ import os
 import os.path
 
 from .heatpredict_accel import surface_heating,surface_heating_y_integral
-from .heatinversion import heatinvert,heatinvert_wfm
 
 try:
     # py2.x
@@ -18,7 +17,22 @@ except ImportError:
 class dummy(object):
     pass
 
+
+pkgpath = sys.modules[dummy.__module__].__file__
+pkgdir=os.path.split(pkgpath)[0]
+
 def getstepurlpath():
-    mypath = sys.modules[dummy.__module__].__file__
-    mydir=os.path.split(mypath)[0]
-    return [ pathname2url(os.path.join(mydir,"pt_steps")) ]
+
+    return [ pathname2url(os.path.join(pkgdir,"pt_steps")) ]
+
+
+versionpath = os.path.join(pkgdir,"version.txt")
+if os.path.exists(versionpath):
+    versionfh = open(versionpath,"r")
+    __version__=versionfh.read().strip()
+    versionfh.close()
+    pass
+else:
+    __version__="UNINSTALLED"
+    pass
+
