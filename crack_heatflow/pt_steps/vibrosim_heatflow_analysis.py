@@ -2,8 +2,26 @@ import sys
 import os
 import os.path
 
+try:
+    # py2.x
+    from urllib import pathname2url
+    from urllib import url2pathname
+    from urllib import quote
+    from urllib import unquote
+    pass
+except ImportError:
+    # py3.x
+    from urllib.request import pathname2url
+    from urllib.request import url2pathname
+    from urllib.parse import quote
+    from urllib.parse import unquote
+    pass
+
+
 import numpy as np
 import pandas as pd
+import scipy
+import scipy.interpolate
 
 from limatix.dc_value import hrefvalue as hrefv
 from limatix.dc_value import numericunitsvalue as numericunitsv
@@ -41,7 +59,7 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
     (along_bnd_z,along_bnd_across,along_bnd_along)=np.meshgrid(z,across,along_bnd,indexing='ij')
 
 
-    (zgrid,acrossgrid,alonggrid) = np.meshgrid(z,across,along,indexing=ij)
+    (zgrid,acrossgrid,alonggrid) = np.meshgrid(z,across,along,indexing="ij")
 
     materials=(
         # material 0: specimen
@@ -87,15 +105,16 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
                                           volumetric,
                                       material_elements,
                                       boundary_z_elements,
-                                      boundary_y_elements,
-                                      boundary_x_elements,
+                                      boundary_across_elements,
+                                      boundary_along_elements,
                                       volumetric_elements)
 
+    print((t_bnd_input.shape[0]-1,z.shape[0],across.shape[0],along.shape[0]))
 
-    T=np.zeros(t_bnd_input.shape[0]-1,nz,across.shape[0],along.shape[0],dtype='f')
+    T=np.zeros((t_bnd_input.shape[0]-1,z.shape[0],across.shape[0],along.shape[0]),dtype='f')
 
-    last_temp = np.zeros((nz,size_across,size_along),dtype='f') # initial condition
-    for tidx in range(t_bnd.shape[0]-1):
+    last_temp = np.zeros((z.shape[0],across.shape[0],along.shape[0]),dtype='d') # initial condition
+    for tidx in range(t_bnd_input.shape[0]-1):
         t_start_input=t_bnd_input[tidx] # our time is centered over the input sample
         t_end_input=t_bnd_input[tidx+1]
         t_center_input=(t_start_input+t_end_input)/2.0
@@ -125,9 +144,9 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
         
         volumetric[1][2] = volumetric_sourceintensity/step_across  # /step_across converts from W/m^2 to W/m^3 volumetric source 
         
-        T[tcnt,:,:,:] = heatsim2.run_adi_steps(ADI_params,ADI_steps,t_center_input,dt,last_temp,volumetric_elements,volumetric)
+        last_temp = heatsim2.run_adi_steps(ADI_params,ADI_steps,t_center_input,dt,last_temp,volumetric_elements,volumetric)
 
-        last_temp = T[tcnt,:,:,:]
+        T[tidx,:,:,:] = last_temp
         pass
     return (t_bnd_output,T)
         
@@ -168,7 +187,8 @@ def run(dc_dest_href,
         dc_spcSpecificHeatCapacity_numericunits,
         dc_Density_numericunits,
         dc_heatflow_method_str="finitedifference",
-        dc_heatflow_fd_thick_numericunits=numericunitsv(5e-3,'m')):
+        dc_heatflow_fd_thick_numericunits=numericunitsv(5e-3,'m'),
+        dc_heatflow_max_timestep_numericunits=numericunitsv(10e-3,'s')):
 
     k=dc_spcThermalConductivity_numericunits.value("W/m/K")
     c=dc_spcSpecificHeatCapacity_numericunits.value("J/kg/K")
@@ -225,18 +245,18 @@ def run(dc_dest_href,
 
 
 
-    # Step sizes should be smaller than dr
-    while step_along > dr_typ:
+    # Step sizes should be smaller than 2*dr
+    while step_along > dr_typ*2.0:
         step_along /= 2
         pass
 
-    while step_across > dr_typ:
+    while step_across > dr_typ*2.0:
         step_across /= 2
         pass
 
     
     n_along = int(round(size_along/step_along/2.0))*2  # n_along must be even
-    n_across = int(round(size_along/step_along/2.0+1.0))*2 - 1 # n_across must be odd so that there is one centered at zero
+    n_across = int(round(size_across/step_across/2.0+1.0))*2 - 1 # n_across must be odd so that there is one centered at zero
 
     along = (np.arange(n_along,dtype='d')-n_along/2.0 + 1)*step_along
     along_bnd = (np.arange(n_along+1,dtype='d')-n_along/2.0 + 0.5)*step_along
@@ -246,7 +266,7 @@ def run(dc_dest_href,
     if dc_heatflow_method_str=="finitedifference":
         dz = min(step_along,step_across)
         z_bnd = np.arange(0,dc_heatflow_fd_thick_numericunits.value('m')+dz,dz)
-        z = (z_bnd[:-1]+z_bnd[0:])/2.0
+        z = (z_bnd[:-1]+z_bnd[1:])/2.0
         
         pass
     
@@ -254,7 +274,10 @@ def run(dc_dest_href,
     #(alonggrid,acrossgrid) = np.meshgrid(along,across,indexing="ij")
 
     if dc_heatflow_method_str=="finitedifference":
-        (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,unique_r,r_inner,r_outer,k,rho,c,side1_heating_reshape,side2_heating_reshape,max_timestep,dc_exc_t3_numericunits.value("s"))
+
+        #raise ValueError("Debug")
+
+        (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,unique_r,r_inner,r_outer,k,rho,c,side1_heating_reshape,side2_heating_reshape,dc_heatflow_max_timestep_numericunits.value("s"),dc_exc_t3_numericunits.value("s"))
         t_center_output = (t_bnd_output[:-1]+t_bnd_output[1:])/2.0
         t_extract_idx = np.argmin(abs(dc_exc_t3_numericunits.value("s")-t_center_output))
         surface_heating_t3 = T[t_extract_idx,0,:,:]
@@ -278,18 +301,30 @@ def run(dc_dest_href,
     
     
     pl.figure()
-    pl.imshow(surface_heating_t3.T,origin="lower",extent=((along[0]-step_along/2.0)*1e3,(along[-1]+step_along/2.0)*1e3,(across[0]-step_across/2.0)*1e3,(across[-1]+step_across/2.0)*1e3),cmap="hot")
+    pl.imshow(surface_heating_t3,origin="lower",
+              extent=((along[0]-step_along/2.0)*1e3,
+                      (along[-1]+step_along/2.0)*1e3,
+                      (across[0]-step_across/2.0)*1e3,
+                      (across[-1]+step_across/2.0)*1e3),
+              cmap="hot")
+    pl.colorbar()
     pl.xlabel('Position along crack (mm)')
-    pl.xlabel('Position across crack (mm)')
+    pl.ylabel('Position across crack (mm)')
     pl.title('t = %f s' % (dc_exc_t3_numericunits.value("s")))
     predicted_heating_plot_href = hrefv(quote(dc_measident_str+"_predicted_heating_plot.png"),dc_dest_href)
     pl.savefig(predicted_heating_plot_href.getpath(),dpi=300)
     
 
     pl.figure()
-    pl.imshow(surface_heating_t3_noisy.T,origin="lower",extent=((along[0]-step_along/2.0)*1e3,(along[-1]+step_along/2.0)*1e3,(across[0]-step_across/2.0)*1e3,(across[-1]+step_across/2.0)*1e3),cmap="hot",vmin=-camera_netd,vmax=camera_netd*9)
+    pl.imshow(surface_heating_t3_noisy,origin="lower",
+              extent=((along[0]-step_along/2.0)*1e3,
+                      (along[-1]+step_along/2.0)*1e3,
+                      (across[0]-step_across/2.0)*1e3,
+                      (across[-1]+step_across/2.0)*1e3),
+              cmap="hot",vmin=-camera_netd,vmax=camera_netd*9)
+    pl.colorbar()
     pl.xlabel('Position along crack (mm)')
-    pl.xlabel('Position across crack (mm)')
+    pl.ylabel('Position across crack (mm)')
     pl.title('t = %f s' % (dc_exc_t3_numericunits.value("s")))
     noisy_predicted_heating_plot_href = hrefv(quote(dc_measident_str+"_noisy_predicted_heating_plot.png"),dc_dest_href)
     pl.savefig(noisy_predicted_heating_plot_href.getpath(),dpi=300)
