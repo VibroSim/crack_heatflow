@@ -74,7 +74,7 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
         # 0: nothing
         (heatsim2.NO_SOURCE,),
         #1: stepped source 
-        [heatsim2.IMPULSE_SOURCE,0.0, [] ], # t0 (sec), Power (W/m^3) as a list so we can monkey-patch them during iteration
+        [heatsim2.IMPULSE_SOURCE,0.0, [] ], # t0 (sec), Energy (J/m^3) as a list so we can monkey-patch them during iteration
     )
     
     # initialize all elements to zero
@@ -142,7 +142,7 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
             volumetric_sourceintensity[volumetric_alongpos] = scipy.interpolate.splev(volumetric_r[volumetric_alongpos],tck_side2,ext=0)
             pass
         
-        volumetric[1][2] = volumetric_sourceintensity/step_across  # /step_across converts from W/m^2 to W/m^3 volumetric source 
+        volumetric[1][2] = volumetric_sourceintensity*dt/step_across  # dt/step_across converts from W/m^2 to J/m^3 volumetric source 
         
         last_temp = heatsim2.run_adi_steps(ADI_params,ADI_steps,t_center_input,dt,last_temp,volumetric_elements,volumetric)
 
@@ -234,8 +234,8 @@ def run(dc_dest_href,
     dt = unique_time[1:]-unique_time[:-1]
     dt_full = np.concatenate((dt,np.array((dt[-1],))))
     
-    timeseg_start = unique_time-dt_full
-    timeseg_end = unique_time+dt_full
+    timeseg_start = unique_time-dt_full/2.0
+    timeseg_end = unique_time+dt_full/2.0
 
 
     size_along =  dc_recon_size_along_numericunits.value('m')
@@ -280,7 +280,7 @@ def run(dc_dest_href,
         (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,unique_r,r_inner,r_outer,k,rho,c,side1_heating_reshape,side2_heating_reshape,dc_heatflow_max_timestep_numericunits.value("s"),dc_exc_t3_numericunits.value("s"))
         t_center_output = (t_bnd_output[:-1]+t_bnd_output[1:])/2.0
         t_extract_idx = np.argmin(abs(dc_exc_t3_numericunits.value("s")-t_center_output))
-        surface_heating_t3 = T[t_extract_idx,0,:,:]
+        surface_heating_t3 = T[t_extract_idx,0,:,:].T
         pass
     elif dc_heatflow_method_str=="greensintegration":
         import pyopencl as cl 
@@ -301,7 +301,7 @@ def run(dc_dest_href,
     
     
     pl.figure()
-    pl.imshow(surface_heating_t3,origin="lower",
+    pl.imshow(surface_heating_t3.T,origin="lower",
               extent=((along[0]-step_along/2.0)*1e3,
                       (along[-1]+step_along/2.0)*1e3,
                       (across[0]-step_across/2.0)*1e3,
@@ -316,7 +316,7 @@ def run(dc_dest_href,
     
 
     pl.figure()
-    pl.imshow(surface_heating_t3_noisy,origin="lower",
+    pl.imshow(surface_heating_t3_noisy.T,origin="lower",
               extent=((along[0]-step_along/2.0)*1e3,
                       (along[-1]+step_along/2.0)*1e3,
                       (across[0]-step_across/2.0)*1e3,
