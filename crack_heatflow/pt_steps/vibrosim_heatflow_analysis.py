@@ -345,12 +345,12 @@ def run(dc_dest_href,
     pl.xlabel('Position along crack (mm)')
     pl.ylabel('Position across crack (mm)')
     pl.title('t = %f s' % (dc_exc_t3_numericunits.value("s")))
-    noisy_predicted_heating_plot_href = hrefv(quote(dc_measident_str+"_noisy_predicted_heating_plot.png"),dc_dest_href)
-    pl.savefig(noisy_predicted_heating_plot_href.getpath(),dpi=300)
+    predicted_heating_plot_noisy_href = hrefv(quote(dc_measident_str+"_predicted_heating_plot_noisy.png"),dc_dest_href)
+    pl.savefig(predicted_heating_plot_noisy_href.getpath(),dpi=300)
     
 
     return {
         "dc:predicted_heating_plot": predicted_heating_plot_href,
-        "dc:noisy_predicted_heating_plot": noisy_predicted_heating_plot_href,
+        "dc:predicted_heating_plot_noisy": predicted_heating_plot_noisy_href,
     }
 
