@@ -115,6 +115,7 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
 
     last_temp = np.zeros((z.shape[0],across.shape[0],along.shape[0]),dtype='d') # initial condition
     for tidx in range(t_bnd_input.shape[0]-1):
+        print("tidx=%d/%d" % (tidx,t_bnd_input.shape[0]-1))
         t_start_input=t_bnd_input[tidx] # our time is centered over the input sample
         t_end_input=t_bnd_input[tidx+1]
         t_center_input=(t_start_input+t_end_input)/2.0
@@ -137,9 +138,27 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
 
             tck_side2 = scipy.interpolate.splrep(unique_r,side2_heating_reshape[tidx//upsamplefactor,:],k=1,task=0,s=0.0)
             
-            volumetric_sourceintensity[~volumetric_alongpos] = scipy.interpolate.splev(volumetric_r[~volumetric_alongpos],tck_side1,ext=0)
+            #volumetric_sourceintensity[~volumetric_alongpos] = scipy.interpolate.splev(heating_r_side1,tck_side1,ext=0)  # This is what we are doing, but it doesn't work quite right because of extrapolation at positive r. 
+
+            heating_r_side1 = volumetric_r[~volumetric_alongpos]
+            heating_intensity_side1 = np.zeros(heating_r_side1.shape,dtype='d')
             
-            volumetric_sourceintensity[volumetric_alongpos] = scipy.interpolate.splev(volumetric_r[volumetric_alongpos],tck_side2,ext=0)
+            heating_intensity_side1[heating_r_side1 < unique_r[-1]] = scipy.interpolate.splev(heating_r_side1[heating_r_side1 < unique_r[-1]],tck_side1,ext=0)
+            
+            volumetric_sourceintensity[~volumetric_alongpos] = heating_intensity_side1
+
+            
+            #volumetric_sourceintensity[volumetric_alongpos] = scipy.interpolate.splev(volumetric_r[volumetric_alongpos],tck_side2,ext=0) # This is what we are doing, but it doesn't work quite right because of extrapolation at positive r. 
+
+
+            heating_r_side2 = volumetric_r[volumetric_alongpos]
+            heating_intensity_side2 = np.zeros(heating_r_side2.shape,dtype='d')
+            
+            heating_intensity_side2[heating_r_side2 < unique_r[-1]] = scipy.interpolate.splev(heating_r_side2[heating_r_side2 < unique_r[-1]],tck_side2,ext=0)
+            
+            volumetric_sourceintensity[volumetric_alongpos] = heating_intensity_side2
+
+
             pass
         
         volumetric[1][2] = volumetric_sourceintensity*dt/step_across  # dt/step_across converts from W/m^2 to J/m^3 volumetric source 
@@ -206,8 +225,8 @@ def run(dc_dest_href,
     time=heatingdata[time_key].values
 
     r = heatingdata[r_key].values
-    side1_heating = heatingdata[side1_heating_key]
-    side2_heating = heatingdata[side2_heating_key]
+    side1_heating = heatingdata[side1_heating_key].values
+    side2_heating = heatingdata[side2_heating_key].values
 
     unique_time = np.unique(time)
     unique_r = np.unique(r)
