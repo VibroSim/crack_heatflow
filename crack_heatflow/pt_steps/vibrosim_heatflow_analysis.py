@@ -183,6 +183,7 @@ def calc_heating_integral(along,across,unique_time,unique_r,r_inner,r_outer,time
     
     
     for timeidx in range(unique_time.shape[0]):
+        print("timeidx=%d/%d" % (timeidx,unique_time.shape[0]))
         recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],alpha,k,False,ctx=ctx)*side1_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
             
             
