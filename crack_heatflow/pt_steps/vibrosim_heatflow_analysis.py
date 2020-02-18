@@ -197,6 +197,7 @@ def calc_heating_integral(along,across,unique_time,unique_r,r_inner,r_outer,time
 def run(dc_dest_href,
         dc_measident_str,
         dc_heatingdata_href,
+        dc_exc_t0_numericunits,
         dc_exc_t3_numericunits,
         dc_recon_size_across_numericunits,
         dc_recon_size_along_numericunits,
@@ -214,7 +215,13 @@ def run(dc_dest_href,
     c=dc_spcSpecificHeatCapacity_numericunits.value("J/kg/K")
     rho=dc_Density_numericunits.value("kg/m^3")
 
-        
+    
+    t0 = dc_exc_t0_numericunits.value("s") # expected welder start time  
+    t3 = dc_exc_t3_numericunits.value("s") # expected welder end time
+
+    target_time = t0 + ((t3-t0)*(2.0/3.0)) # 2/3rds of way from t0 to t3        
+
+
     heatingdata=pd.read_csv(dc_heatingdata_href.getpath(),sep="\t")
     time_key = '% t(s) '
     r_key =' r(m) '
@@ -297,31 +304,32 @@ def run(dc_dest_href,
 
         #raise ValueError("Debug")
 
-        (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,unique_r,r_inner,r_outer,k,rho,c,side1_heating_reshape,side2_heating_reshape,dc_heatflow_max_timestep_numericunits.value("s"),dc_exc_t3_numericunits.value("s"))
+        (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,unique_r,r_inner,r_outer,k,rho,c,side1_heating_reshape,side2_heating_reshape,dc_heatflow_max_timestep_numericunits.value("s"),target_time) # dc_exc_t3_numericunits.value("s"))
         t_center_output = (t_bnd_output[:-1]+t_bnd_output[1:])/2.0
-        t_extract_idx = np.argmin(abs(dc_exc_t3_numericunits.value("s")-t_center_output))
-        surface_heating_t3 = T[t_extract_idx,0,:,:].T
+        t_extract_idx = np.argmin(abs(target_time-t_center_output)) #np.argmin(abs(dc_exc_t3_numericunits.value("s")-t_center_output))
+        surface_heating_target_time = T[t_extract_idx,0,:,:].T
         pass
     elif dc_heatflow_method_str=="greensintegration":
         import pyopencl as cl 
         ctx = cl.create_some_context()  # set ctx equal to None in order to disable OpenCL acceleration
         
-        surface_heating_t3 = calc_heating_integral(along,across,
-                                                   unique_time,unique_r,
-                                                   r_inner,r_outer,
-                                                   timeseg_start,timeseg_end,
-                                                   k/(rho*c),k,
-                                                   side1_heating_reshape,side2_heating_reshape,
-                                                   dc_exc_t3_numericunits.value("s"),ctx)
+        surface_heating_target_time = calc_heating_integral(along,across,
+                                                            unique_time,unique_r,
+                                                            r_inner,r_outer,
+                                                            timeseg_start,timeseg_end,
+                                                            k/(rho*c),k,
+                                                            side1_heating_reshape,side2_heating_reshape,
+                                                            target_time,#dc_exc_t3_numericunits.value("s")
+                                                            ctx)
         pass
     
     camera_netd = dc_simulationcameranetd_numericunits.value("K")
     
-    surface_heating_t3_noisy = surface_heating_t3 + np.random.randn(*surface_heating_t3.shape)*camera_netd
+    surface_heating_target_time_noisy = surface_heating_target_time + np.random.randn(*surface_heating_target_time.shape)*camera_netd
     
     
     pl.figure()
-    pl.imshow(surface_heating_t3.T,origin="lower",
+    pl.imshow(surface_heating_target_time.T,origin="lower",
               extent=((along[0]-step_along/2.0)*1e3,
                       (along[-1]+step_along/2.0)*1e3,
                       (across[0]-step_across/2.0)*1e3,
@@ -330,13 +338,13 @@ def run(dc_dest_href,
     pl.colorbar()
     pl.xlabel('Position along crack (mm)')
     pl.ylabel('Position across crack (mm)')
-    pl.title('t = %f s' % (dc_exc_t3_numericunits.value("s")))
+    pl.title('t = %f s' % (target_time)) #(dc_exc_t3_numericunits.value("s")))
     heating_predicted_plot_href = hrefv(quote(dc_measident_str+"_heating_predicted_plot.png"),dc_dest_href)
     pl.savefig(heating_predicted_plot_href.getpath(),dpi=300)
     
 
     pl.figure()
-    pl.imshow(surface_heating_t3_noisy.T,origin="lower",
+    pl.imshow(surface_heating_target_time_noisy.T,origin="lower",
               extent=((along[0]-step_along/2.0)*1e3,
                       (along[-1]+step_along/2.0)*1e3,
                       (across[0]-step_across/2.0)*1e3,
@@ -345,7 +353,7 @@ def run(dc_dest_href,
     pl.colorbar()
     pl.xlabel('Position along crack (mm)')
     pl.ylabel('Position across crack (mm)')
-    pl.title('t = %f s' % (dc_exc_t3_numericunits.value("s")))
+    pl.title('t = %f s' % (target_time)) #(dc_exc_t3_numericunits.value("s")))
     heating_predicted_plot_noisy_href = hrefv(quote(dc_measident_str+"_heating_predicted_plot_noisy.png"),dc_dest_href)
     pl.savefig(heating_predicted_plot_noisy_href.getpath(),dpi=300)
     
