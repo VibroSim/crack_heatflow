@@ -85,6 +85,7 @@ console_scripts_entrypoints = [ "%s = crac_heatflow.bin.%s:main" % (script,scrip
 setup(name="crack_heatflow",
       description="Prediction of crack heatflows",
       author="Stephen D. Holland",
+      version=version,
       # url="http://",
       zip_safe=False,
       packages=["crack_heatflow",
