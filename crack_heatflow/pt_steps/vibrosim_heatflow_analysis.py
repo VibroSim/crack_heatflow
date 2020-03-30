@@ -131,33 +131,36 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
 
 
         if tidx//upsamplefactor < unique_time.shape[0]:
-            volumetric_alongpos = (alonggrid > 0.0)[volumetric_elements==1] # are we on the positive side of the along axis? (i.e. side #2) 
+            volumetric_alongpos = (alonggrid >= 0.0)[volumetric_elements==1] # are we on the positive side of the along axis? (i.e. side #2) 
+            volumetric_alongneg = (alonggrid <= 0.0)[volumetric_elements==1] # are we on the negative side of the along axis? (i.e. side #1) 
 
-        
-            tck_side1 = scipy.interpolate.splrep(unique_r,side1_heating_reshape[tidx//upsamplefactor,:],k=1,task=0,s=0.0)
-
-            tck_side2 = scipy.interpolate.splrep(unique_r,side2_heating_reshape[tidx//upsamplefactor,:],k=1,task=0,s=0.0)
-            
-            #volumetric_sourceintensity[~volumetric_alongpos] = scipy.interpolate.splev(heating_r_side1,tck_side1,ext=0)  # This is what we are doing, but it doesn't work quite right because of extrapolation at positive r. 
-
-            heating_r_side1 = volumetric_r[~volumetric_alongpos]
-            heating_intensity_side1 = np.zeros(heating_r_side1.shape,dtype='d')
-            
-            heating_intensity_side1[heating_r_side1 < unique_r[-1]] = scipy.interpolate.splev(heating_r_side1[heating_r_side1 < unique_r[-1]],tck_side1,ext=0)
-            
-            volumetric_sourceintensity[~volumetric_alongpos] = heating_intensity_side1
+            if side1_heating_reshape is not None:
+                tck_side1 = scipy.interpolate.splrep(unique_r,side1_heating_reshape[tidx//upsamplefactor,:],k=1,task=0,s=0.0)
+                heating_r_side1 = volumetric_r[volumetric_alongneg]
+                heating_intensity_side1 = np.zeros(heating_r_side1.shape,dtype='d')
+                
+                heating_intensity_side1[heating_r_side1 < unique_r[-1]] = scipy.interpolate.splev(heating_r_side1[heating_r_side1 < unique_r[-1]],tck_side1,ext=0)
+                
 
             
-            #volumetric_sourceintensity[volumetric_alongpos] = scipy.interpolate.splev(volumetric_r[volumetric_alongpos],tck_side2,ext=0) # This is what we are doing, but it doesn't work quite right because of extrapolation at positive r. 
+                #volumetric_sourceintensity[volumetric_alongneg] = scipy.interpolate.splev(heating_r_side1,tck_side1,ext=0)  # This is what we are doing, but it doesn't work quite right because of extrapolation at positive r. 
 
-
-            heating_r_side2 = volumetric_r[volumetric_alongpos]
-            heating_intensity_side2 = np.zeros(heating_r_side2.shape,dtype='d')
             
-            heating_intensity_side2[heating_r_side2 < unique_r[-1]] = scipy.interpolate.splev(heating_r_side2[heating_r_side2 < unique_r[-1]],tck_side2,ext=0)
+                volumetric_sourceintensity[volumetric_alongneg] = heating_intensity_side1
+                pass
             
-            volumetric_sourceintensity[volumetric_alongpos] = heating_intensity_side2
+            if side2_heating_reshape is not None:
+                tck_side2 = scipy.interpolate.splrep(unique_r,side2_heating_reshape[tidx//upsamplefactor,:],k=1,task=0,s=0.0)
+                
+                heating_r_side2 = volumetric_r[volumetric_alongpos]
+                heating_intensity_side2 = np.zeros(heating_r_side2.shape,dtype='d')
+                
+                heating_intensity_side2[heating_r_side2 < unique_r[-1]] = scipy.interpolate.splev(heating_r_side2[heating_r_side2 < unique_r[-1]],tck_side2,ext=0)
+                
+                volumetric_sourceintensity[volumetric_alongpos] = heating_intensity_side2
 
+                #volumetric_sourceintensity[volumetric_alongpos] = scipy.interpolate.splev(volumetric_r[volumetric_alongpos],tck_side2,ext=0) # This is what we are doing, but it doesn't work quite right because of extrapolation at positive r. 
+                pass
 
             pass
         
@@ -184,10 +187,14 @@ def calc_heating_integral(along,across,unique_time,unique_r,r_inner,r_outer,time
     
     for timeidx in range(unique_time.shape[0]):
         print("timeidx=%d/%d" % (timeidx,unique_time.shape[0]))
-        recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],alpha,k,False,ctx=ctx)*side1_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
+        if side1_heating_reshape is not None:
+            recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],alpha,k,False,ctx=ctx)*side1_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
+            pass
             
-            
-        recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],alpha,k,True,ctx=ctx)*side2_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
+        if side2_heating_reshape is not None:
+            recongrid += np.sum(surface_heating(along[:,np.newaxis,np.newaxis],across[np.newaxis,:,np.newaxis],frametime,r_inner[np.newaxis,np.newaxis,:],r_outer[np.newaxis,np.newaxis,:],timeseg_start[timeidx],timeseg_end[timeidx],alpha,k,True,ctx=ctx)*side2_heating_reshape[timeidx,np.newaxis,np.newaxis,:],axis=2) # sum over multiple radii
+            pass
+        
             
         pass
     
@@ -233,17 +240,34 @@ def run(dc_dest_href,
     time=heatingdata[time_key].values
 
     r = heatingdata[r_key].values
-    side1_heating = heatingdata[side1_heating_key].values
-    side2_heating = heatingdata[side2_heating_key].values
+
+    has_side1 = side1_heating_key in heatingdata.columns # truth value for presence of side1
+    has_side2 = side2_heating_key in heatingdata.columns # truth value for presence of side2
+
 
     unique_time = np.unique(time)
     unique_r = np.unique(r)
-    
 
     r_reshape = r.reshape(unique_time.shape[0],unique_r.shape[0])
     time_reshape = time.reshape(unique_time.shape[0],unique_r.shape[0])
-    side1_heating_reshape = side1_heating.reshape(unique_time.shape[0],unique_r.shape[0])
-    side2_heating_reshape = side2_heating.reshape(unique_time.shape[0],unique_r.shape[0])
+
+    if has_side1:
+        side1_heating = heatingdata[side1_heating_key].values
+        side1_heating_reshape = side1_heating.reshape(unique_time.shape[0],unique_r.shape[0])
+        pass
+    else: 
+        side1_heating_reshape = None
+        pass
+
+    if has_side2:
+        side2_heating = heatingdata[side2_heating_key].values
+
+        side2_heating_reshape = side2_heating.reshape(unique_time.shape[0],unique_r.shape[0])
+        pass
+    else: 
+        side2_heating_reshape = None
+        pass
+        
 
     # Verify that the reshaped output is correctly a two-index dataset,
     # with indexes as specified by unique_time and unique_r
