@@ -232,8 +232,24 @@ def run(dc_dest_href,
     heatingdata=pd.read_csv(dc_heatingdata_href.getpath(),sep="\t")
     time_key = '% t(s) '
     r_key =' r(m) '
-    side1_heating_key=' side1_heating(W/m^2) '
-    side2_heating_key=' side2_heating(W/m^2)'
+
+    #side1_heating_key=' side1_heating(W/m^2) '
+    #side2_heating_key=' side2_heating(W/m^2)'
+    side1_heating_key=None 
+    side2_heating_key=None 
+
+    # Column names seem to get whitespace attached, so
+    # need to identify the actual names
+    for colname in heatingdata.columns:
+        if colname.strip() == "side1_heating(W/m^2)":
+            side1_heating_key=colname
+            pass
+        if colname.strip() == "side2_heating(W/m^2)":
+            side2_heating_key=colname
+            pass
+        pass
+    
+    
 
     
     
