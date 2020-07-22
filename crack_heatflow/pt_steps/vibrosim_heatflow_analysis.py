@@ -398,8 +398,10 @@ def run(dc_dest_href,
     heating_predicted_plot_noisy_href = hrefv(quote(dc_measident_str+"_heating_predicted_plot_noisy.png"),dc_dest_href)
     pl.savefig(heating_predicted_plot_noisy_href.getpath(),dpi=300)
     
-    pl.close('all') # Be sure to recover memory from plots
-    
+    if not(__processtrak_interactive): 
+        pl.close('all') # Be sure to recover memory from plots
+        pass
+
     return {
         "dc:heating_predicted_plot": heating_predicted_plot_href,
         "dc:heating_predicted_plot_noisy": heating_predicted_plot_noisy_href,
