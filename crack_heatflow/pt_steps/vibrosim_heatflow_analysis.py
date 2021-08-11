@@ -172,7 +172,41 @@ def calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,a
         T[tidx,:,:,:] = last_temp
         pass
     return (t_bnd_output,T)
-        
+
+
+def resample_heating(unique_time,unique_r,heating,step_along):
+    """ Resample the heating data, which has shape (nt,nr)
+    along the radial axis to accommodate the desired spatial
+    step size step_along """
+
+    dr=unique_r[1]-unique_r[0]
+    # check that unique_r has uniform spacing
+    recreated_unique_r = unique_r[0]+np.arange(unique_r.shape[0],dtype='d')*dr
+    assert(np.linalg.norm(unique_r-recreated_unique_r)/np.linalg.norm(unique_r) < 1e-6)
+
+    # unique_r usually goes from 1/2 step from one end to 1/2 step from
+    # other end (element centers)
+    bounds = (unique_r[0]-dr/2.0,unique_r[-1]+dr/2.0)
+
+    resampled_boundaries=np.linspace(bounds[0],bounds[1],int(round((bounds[1]-bounds[0])/step_along)))
+    resampled_dr = resampled_boundaries[1]-resampled_boundaries[0]
+    resampled_r = resampled_boundaries[0]+resampled_dr/2.0 + np.arange(resampled_boundaries.shape[0]-1,dtype='d')*resampled_dr;
+
+    heating_resampled=np.zeros((unique_time.shape[0],resampled_r.shape[0]),dtype='d')
+    
+    # per documentation scipy.signal.resample assumes Fourier periodicity.
+    # cosine transform periodicity here is probably safer
+    
+    # per documentation scipy.signal.resample assumes Fourier periodicity.
+    # cosine transform periodicity here is probably safer
+    # So we pad with a reversed copy down the r axis
+    heatingmat = np.concatenate((heating[:,:],heating[:,::-1]),axis=1)
+    heatingmat_resampled = scipy.signal.resample(heatingmat,resampled_r.shape[0]*2,axis=1)
+
+    # Now remove the extra reversed copy
+    heating_resampled=heatingmat_resampled[:,:resampled_r.shape[0]]
+    
+    return (heating_resampled,resampled_r)
     
 def calc_heating_integral(along,across,unique_time,unique_r,r_inner,r_outer,timeseg_start,timeseg_end,alpha,k,side1_heating_reshape,side2_heating_reshape,frametime,ctx):
     recongrid = np.zeros((along.shape[0],across.shape[0]),dtype='d')
@@ -228,6 +262,11 @@ def run(dc_dest_href,
     t3 = dc_exc_t3_numericunits.value("s") # expected welder end time
 
     target_time = t0 + ((t3-t0)*(2.0/3.0)) # 2/3rds of way from t0 to t3        
+    
+    size_along =  dc_recon_size_along_numericunits.value('m')
+    size_across =  dc_recon_size_across_numericunits.value('m')
+    step_along =  dc_recon_stepsize_along_numericunits.value('m')
+    step_across =  dc_recon_stepsize_across_numericunits.value('m')
 
 
     heatingdata=pd.read_csv(dc_heatingdata_href.getpath(),sep="\t")
@@ -268,60 +307,96 @@ def run(dc_dest_href,
     r_reshape = r.reshape(unique_time.shape[0],unique_r.shape[0])
     time_reshape = time.reshape(unique_time.shape[0],unique_r.shape[0])
 
+    # Verify that the reshaped output is correctly a two-index dataset,
+    # with indexes as specified by unique_time and unique_r
+    assert(np.all(r_reshape==unique_r[np.newaxis,:]))
+    assert(np.all(time_reshape==unique_time[:,np.newaxis]))
+    
+    
     if has_side1:
         side1_heating = heatingdata[side1_heating_key].values
         side1_heating_reshape = side1_heating.reshape(unique_time.shape[0],unique_r.shape[0])
+        (side1_heating_resampled,side1_resampled_r) = resample_heating(unique_time,unique_r,side1_heating_reshape,step_along)
+        resampled_r = side1_resampled_r
         pass
     else: 
-        side1_heating_reshape = None
+        side1_heating_resampled = None        
         pass
 
     if has_side2:
         side2_heating = heatingdata[side2_heating_key].values
 
         side2_heating_reshape = side2_heating.reshape(unique_time.shape[0],unique_r.shape[0])
+        (side2_heating_resampled,side2_resampled_r) = resample_heating(unique_time,unique_r,side2_heating_reshape,step_along)
+        resampled_r = side2_resampled_r
         pass
     else: 
-        side2_heating_reshape = None
+        side2_heating_resampled = None
         pass
-        
 
-    # Verify that the reshaped output is correctly a two-index dataset,
-    # with indexes as specified by unique_time and unique_r
-    assert(np.all(r_reshape==unique_r[np.newaxis,:]))
-    assert(np.all(time_reshape==unique_time[:,np.newaxis]))
+    if has_side1 and has_side2:
+        assert((side1_resampled_r==side2_resampled_r).all())
+        pass
+
     
-    dr = unique_r[1:]-unique_r[:-1]
+    dr = resampled_r[1:]-resampled_r[:-1]
     dr_full = np.concatenate((dr,np.array((dr[-1],))))
     dr_typ = np.median(dr)
     
-    r_inner = unique_r-dr_full/2.0
-    r_outer = unique_r+dr_full/2.0
+    r_inner = resampled_r-dr_full/2.0
+    r_outer = resampled_r+dr_full/2.0
     r_inner[r_inner < 0.0]=0.0
 
     dt = unique_time[1:]-unique_time[:-1]
     dt_full = np.concatenate((dt,np.array((dt[-1],))))
+    dt_typ = np.median(dt)
     
     timeseg_start = unique_time-dt_full/2.0
     timeseg_end = unique_time+dt_full/2.0
 
+    retval = []
 
-    size_along =  dc_recon_size_along_numericunits.value('m')
-    size_across =  dc_recon_size_across_numericunits.value('m')
-    step_along =  dc_recon_stepsize_along_numericunits.value('m')
-    step_across =  dc_recon_stepsize_across_numericunits.value('m')
-
-
-
-    # Step sizes should be smaller than 2*dr
-    while step_along > dr_typ*2.0:
-        step_along /= 2
+    # Plot resampled heatgrams
+    if has_side1:
+        resampled_heatgram_side1_fig=pl.figure()
+        pl.clf()
+        pl.imshow(side1_heating_resampled,aspect='auto',origin='lower',extent=((resampled_r[0]-dr_typ/2.0)*1e3,(resampled_r[-1]+dr_typ/2.0)*1e3,unique_time[0]-dt_typ/2.0,unique_time[-1]+dt_typ/2.0))
+        pl.colorbar()
+        pl.grid(True)
+        pl.xlabel('Radius from crack center (mm)')
+        pl.ylabel('Time (s)')
+        pl.title('Resampled total heating power (W/m^2), side1')
+        resampled_heatgram_side1_href = hrefv(quote(dc_measident_str+"_resampled_side1_heatgram.png"),dc_dest_href)
+        pl.savefig(resampled_heatgram_side1_href.getpath(),dpi=300)
+        retval.append(("dc:resampled_heatgram_side1",resampled_heatgram_side1_href))
+        pass
+    else:
+        resampled_heatgram_side1_fig=None
+        resampled_heatgram_side1_href=None
         pass
 
-    while step_across > dr_typ*2.0:
-        step_across /= 2
+    # Plot resampled heatgrams
+    if has_side2:
+        resampled_heatgram_side2_fig=pl.figure()
+        pl.clf()
+        pl.imshow(side2_heating_resampled,aspect='auto',origin='lower',extent=((resampled_r[0]-dr_typ/2.0)*1e3,(resampled_r[-1]+dr_typ/2.0)*1e3,unique_time[0]-dt_typ/2.0,unique_time[-1]+dt_typ/2.0))
+        pl.colorbar()
+        pl.grid(True)
+        pl.xlabel('Radius from crack center (mm)')
+        pl.ylabel('Time (s)')
+        pl.title('Resampled total heating power (W/m^2), side2')
+        resampled_heatgram_side2_href = hrefv(quote(dc_measident_str+"_resampled_side2_heatgram.png"),dc_dest_href)
+        pl.savefig(resampled_heatgram_side2_href.getpath(),dpi=300)
+        retval.append(("dc:resampled_heatgram_side2",resampled_heatgram_side2_href))
+        pass
+    else:
+        resampled_heatgram_side2_fig=None
+        resampled_heatgram_side2_href=None
         pass
 
+
+
+    
     
     n_along = int(round(size_along/step_along/2.0))*2  # n_along must be even
     n_across = int(round(size_across/step_across/2.0+1.0))*2 - 1 # n_across must be odd so that there is one centered at zero
@@ -345,7 +420,7 @@ def run(dc_dest_href,
 
         #raise ValueError("Debug")
 
-        (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,unique_r,r_inner,r_outer,k,rho,c,side1_heating_reshape,side2_heating_reshape,dc_heatflow_max_timestep_numericunits.value("s"),target_time) # dc_exc_t3_numericunits.value("s"))
+        (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,resampled_r,r_inner,r_outer,k,rho,c,side1_heating_reshape,side2_heating_reshape,dc_heatflow_max_timestep_numericunits.value("s"),target_time) # dc_exc_t3_numericunits.value("s"))
         t_center_output = (t_bnd_output[:-1]+t_bnd_output[1:])/2.0
         t_extract_idx = np.argmin(abs(target_time-t_center_output)) #np.argmin(abs(dc_exc_t3_numericunits.value("s")-t_center_output))
         surface_heating_target_time = np.array(copy.deepcopy(T[t_extract_idx,0,:,:].T))
@@ -355,7 +430,7 @@ def run(dc_dest_href,
         ctx = cl.create_some_context()  # set ctx equal to None in order to disable OpenCL acceleration
         
         surface_heating_target_time = calc_heating_integral(along,across,
-                                                            unique_time,unique_r,
+                                                            unique_time,resampled_r,
                                                             r_inner,r_outer,
                                                             timeseg_start,timeseg_end,
                                                             k/(rho*c),k,
@@ -382,6 +457,7 @@ def run(dc_dest_href,
     pl.title('t = %f s' % (target_time)) #(dc_exc_t3_numericunits.value("s")))
     heating_predicted_plot_href = hrefv(quote(dc_measident_str+"_heating_predicted_plot.png"),dc_dest_href)
     pl.savefig(heating_predicted_plot_href.getpath(),dpi=300)
+    retval.append(("dc:heating_predicted_plot", heating_predicted_plot_href))
     
 
     pl.figure()
@@ -397,13 +473,10 @@ def run(dc_dest_href,
     pl.title('t = %f s' % (target_time)) #(dc_exc_t3_numericunits.value("s")))
     heating_predicted_plot_noisy_href = hrefv(quote(dc_measident_str+"_heating_predicted_plot_noisy.png"),dc_dest_href)
     pl.savefig(heating_predicted_plot_noisy_href.getpath(),dpi=300)
+    retval.append(("dc:heating_predicted_plot_noisy", heating_predicted_plot_noisy_href))
     
     if not(__processtrak_interactive): 
         pl.close('all') # Be sure to recover memory from plots
         pass
 
-    return {
-        "dc:heating_predicted_plot": heating_predicted_plot_href,
-        "dc:heating_predicted_plot_noisy": heating_predicted_plot_noisy_href,
-    }
-
+    return retval
