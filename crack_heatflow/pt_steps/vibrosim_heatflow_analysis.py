@@ -420,7 +420,7 @@ def run(dc_dest_href,
 
         #raise ValueError("Debug")
 
-        (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,resampled_r,r_inner,r_outer,k,rho,c,side1_heating_reshape,side2_heating_reshape,dc_heatflow_max_timestep_numericunits.value("s"),target_time) # dc_exc_t3_numericunits.value("s"))
+        (t_bnd_output,T) = calc_heating_finitedifference(z,z_bnd,dz,along,along_bnd,step_along,across,across_bnd,step_across,unique_time,dt_full,resampled_r,r_inner,r_outer,k,rho,c,side1_heating_resampled,side2_heating_resampled,dc_heatflow_max_timestep_numericunits.value("s"),target_time) # dc_exc_t3_numericunits.value("s"))
         t_center_output = (t_bnd_output[:-1]+t_bnd_output[1:])/2.0
         t_extract_idx = np.argmin(abs(target_time-t_center_output)) #np.argmin(abs(dc_exc_t3_numericunits.value("s")-t_center_output))
         surface_heating_target_time = np.array(copy.deepcopy(T[t_extract_idx,0,:,:].T))
@@ -434,7 +434,7 @@ def run(dc_dest_href,
                                                             r_inner,r_outer,
                                                             timeseg_start,timeseg_end,
                                                             k/(rho*c),k,
-                                                            side1_heating_reshape,side2_heating_reshape,
+                                                            side1_heating_resampled,side2_heating_resampled,
                                                             target_time,#dc_exc_t3_numericunits.value("s")
                                                             ctx)
         pass
